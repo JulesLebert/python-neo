@@ -34,10 +34,9 @@ from pathlib import Path
 
 
 class TdtRawIO(BaseRawIO):
-    extensions = ['tbk', 'tdx', 'tev', 'tin', 'tnt', 'tsq', 'sev', 'txt']
     rawmode = 'one-dir'
 
-    def __init__(self, dirname='', sortname=''):
+    def __init__(self, dirname='', sortname='', stream_name_neo=None):
         """
         Initialize reader for one or multiple TDT data blocks.
 
@@ -49,6 +48,9 @@ class TdtRawIO(BaseRawIO):
             if sortname=='PLX', there should be a ./sort/PLX/*.SortResult file in the tdt block,
             which stores the sortcode for every spike
             Default: '', uses the original online sort.
+        stream_name (str):
+            If there are several streams, specify the stream name you want to load.
+            Default: None, load all streams.
 
 
         """
@@ -65,6 +67,7 @@ class TdtRawIO(BaseRawIO):
             raise ValueError(f'No data folder or file found for {dirname}')
 
         self.sortname = sortname
+        self.stream_name_neo = stream_name_neo
 
     def _source_name(self):
         return self.dirname
@@ -110,7 +113,7 @@ class TdtRawIO(BaseRawIO):
         for seg_index, segment_name in enumerate(segment_names):
             tev_filename = self._get_filestem(segment_name).with_suffix('.tev')
             if tev_filename.exists():
-                tev_data = np.load(tev_filename, mode='r', offset=0, dtype='uint8')
+                tev_data = np.memmap(tev_filename, mode='r', offset=0, dtype='uint8')
             else:
                 tev_data = None
             self._tev_datas.append(tev_data)
@@ -179,12 +182,16 @@ class TdtRawIO(BaseRawIO):
         self._sigs_t_start = {seg_index: {}
                               for seg_index in range(nb_segment)}  # key = seg_index then group_id
 
-        keep = info_channel_groups['TankEvType'] == EVTYPE_STREAM
+        if self.stream_name_neo is not None:
+            keep = info_channel_groups['StoreName'].astype(str) == self.stream_name_neo 
+        else:
+            keep = info_channel_groups['TankEvType'] == EVTYPE_STREAM
+            
         missing_sev_channels = []
         for stream_index, info in enumerate(info_channel_groups[keep]):
             self._sig_sample_per_chunk[stream_index] = info['NumPoints']
 
-            stream_name = str(info['StoreName'])
+            stream_name = info['StoreName'].astype(str)
             stream_id = f'{stream_index}'
             signal_streams.append((stream_name, stream_id))
 
@@ -199,7 +206,7 @@ class TdtRawIO(BaseRawIO):
                     # get data index
                     tsq = self._tsq[seg_index]
                     mask = ((tsq['evtype'] == EVTYPE_STREAM) | \
-                           (tsq['evtype'] == EVTYPE_STREAM_VARIANT)) & \
+                           (tsq['evtype'] == int(33041))) & \
                            (tsq['evname'] == info['StoreName']) & \
                            (tsq['channel'] == chan_id)
                     data_index = tsq[mask].copy()
@@ -250,7 +257,7 @@ class TdtRawIO(BaseRawIO):
                         sev_filename = (path / sev_stem).with_suffix('.sev')
                     else:
                         # for single block datasets the exact name of sev files in not known
-                        sev_regex = f"*_[cC]h{chan_id}.sev"
+                        sev_regex = f"*_Ch{chan_id}.sev"
                         sev_filename = list(self.dirname.parent.glob(str(sev_regex)))
                         # in case multiple sev files are found, try to find the one for current stream
                         if len(sev_filename) > 1:
@@ -266,7 +273,7 @@ class TdtRawIO(BaseRawIO):
                             sev_filename = sev_filename[0]
                             
                     if (sev_filename is not None) and sev_filename.exists():
-                        data = np.load(sev_filename, mode='r', offset=0, dtype='uint8')
+                        data = np.memmap(sev_filename, mode='r', offset=0, dtype='uint8')
                     else:
                         data = self._tev_datas[seg_index]
                     assert data is not None, 'no TEV nor SEV'
@@ -570,7 +577,6 @@ EVTYPE_STRON = int('00000101', 16)  # 257
 EVTYPE_STROFF = int('00000102', 16)  # 258
 EVTYPE_SCALAR = int('00000201', 16)  # 513
 EVTYPE_STREAM = int('00008101', 16)  # 33025
-EVTYPE_STREAM_VARIANT = int('00008111', 16)  # 33041
 EVTYPE_SNIP = int('00008201', 16)  # 33281
 EVTYPE_MARK = int('00008801', 16)  # 34817
 EVTYPE_HASDATA = int('00008000', 16)  # 32768
