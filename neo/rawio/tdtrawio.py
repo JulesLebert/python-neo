@@ -113,7 +113,8 @@ class TdtRawIO(BaseRawIO):
         for seg_index, segment_name in enumerate(segment_names):
             tev_filename = self._get_filestem(segment_name).with_suffix('.tev')
             if tev_filename.exists():
-                tev_data = np.memmap(tev_filename, mode='r', offset=0, dtype='uint8')
+                # tev_data = np.memmap(tev_filename, mode='r', offset=0, dtype='uint8')
+                tev_data = np.fromfile(tev_filename, offset=0, dtype='uint8')
             else:
                 tev_data = None
             self._tev_datas.append(tev_data)
@@ -273,7 +274,8 @@ class TdtRawIO(BaseRawIO):
                             sev_filename = sev_filename[0]
                             
                     if (sev_filename is not None) and sev_filename.exists():
-                        data = np.memmap(sev_filename, mode='r', offset=0, dtype='uint8')
+                        # data = np.memmap(sev_filename, mode='r', offset=0, dtype='uint8')
+                        data = np.fromfile(sev_filename, offset=0, dtype='uint8')
                     else:
                         data = self._tev_datas[seg_index]
                     assert data is not None, 'no TEV nor SEV'
